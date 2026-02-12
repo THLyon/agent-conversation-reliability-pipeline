@@ -2,6 +2,9 @@
         Common Commands
 ================================
 
+uv venv
+uv sync --extra dev
+
 uv run outrival-demo          # run the two-bot demo
 uv run python -m app.main     # run via module path (if you prefer)
 uv run ruff check .           # lint
