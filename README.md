@@ -74,6 +74,16 @@ Quick reference available in `info/common_commands.md`.
 
 ---
 
+## Documentation
+
+Architecture overview:
+`info/architecture.md`
+
+Quick command reference:
+`info/common_commands.md`
+
+---
+
 ## Commit Convention
 
 This repository follows Conventional Commits:
