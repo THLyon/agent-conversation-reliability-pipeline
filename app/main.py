@@ -45,34 +45,27 @@ async def run_text_mvp() -> None:
         cfg=DailyTextTransportConfig(room_url=room_url, token=token),
     )
 
-    # Minimal "bus": when one bot receives a message, we just print it.
-    async def on_teller_msg(message: Any, sender: str) -> None: 
-        print(f"[teller recv] from={sender} msg={message}")
+    #Start/Join FIRST
+    await asyncio.gather(teller.start(), customer.start())
+    await asyncio.sleep(0.5)
 
-    async def on_customer_msg(message: Any, sender: str) -> None:
-        print(f"[customer recv] from={sender} msg={message}")
+    try: 
+        t0 = time.perf_counter()
 
-    teller.set_app_message_handler(on_teller_msg)
-    customer.set_app_message_handler(on_customer_msg)
+        for step in SCENARIO:
+            if step.speaker == "customer":
+                await customer.send_text(step.text)
+            else: 
+                await teller.send_text(step.text)
 
-    # NOTE: In Phase 1, full Pipecat pipeline is not yet being build
-    # I am validating "text message + scenerio timing" first.
-    # Next commit will run these transports insise a PipelineTask so join/leave are managed cleanly. 
+            await asyncio.sleep(0.6)
 
-    # For now I just drive the deterministic script though the transports.  
-    t0 = time.perf_counter()
+        dur_ms = int((time.perf_counter() - t0) * 1000)
+        print(f"\n Phase 1 text MVP complete in {dur_ms}ms.\n")
 
-    # Send alternating messages (this proves data channel / chat works).
-    for idx, step in enumerate(SCENARIO, start=1):
-        if step.speaker == "customer":
-            await customer.send_text(step.text)
-        else: 
-            await teller.send_text(step.text)
-
-        await asyncio.sleep(0.4) # tiny pacing so messages are intelligible
-
-    dur_ms = int((time.perf_counter() - t0) * 1000)
-    print(f"\n Phase 1 text MCP complete in {dur_ms}ms. (Next: manage join/leave via PipelineTask)\n")
+    finally:
+        # Leave cleanly
+        await asyncio.gather(teller.stop(), customer.stop())
 
 def main() -> None:
     asyncio.run(run_text_mvp())

@@ -13,6 +13,7 @@ source = { editable = "." }
 dependencies = [
     { name = "daily-python" },
     { name = "pipecat-ai" },
+    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
@@ -27,6 +28,7 @@ requires-dist = [
     { name = "daily-python", specifier = ">=0.0.0" },
     { name = "pipecat-ai", specifier = ">=0.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "python-dotenv" },
     { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
 ]
