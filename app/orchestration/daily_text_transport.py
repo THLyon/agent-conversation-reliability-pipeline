@@ -68,7 +68,7 @@ class DailyTextTransport:
     async def send_text(self, text: str) -> None:
         # This sends to Daily "prebuild chat"; works as a text-channel MVP.
         # Pipecat exposes this helper on transport.
-        err = await self._transport.sent_prebuild_chat_message(message=text, user_name=self._bot_name)
+        err = await self._transport.send_prebuilt_chat_message(message=text, user_name=self._bot_name)
         if err: 
             raise RuntimeError(f"Daily send_prebuilt_chat_message error: {err}")
         
