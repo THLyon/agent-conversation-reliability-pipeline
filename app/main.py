@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dotenv import load_dotenv
+from loguru import logger
 
 from app.orchestration.daily_text_transport import DailyTextTransport, DailyTextTransportConfig
 
@@ -30,6 +31,7 @@ SCENARIO = [
 
 async def run_text_mvp() -> None:
     load_dotenv()
+    logger.disable("pipecat.processors.frameworks.rtvi")
 
     room_url = os.getenv("DAILY_ROOM_URL", "").strip().strip('"')
     token = os.getenv("DAILY_TOKEN", "").strip().strip('"') or None
@@ -48,6 +50,9 @@ async def run_text_mvp() -> None:
     #Start/Join FIRST
     await asyncio.gather(teller.start(), customer.start())
     await asyncio.sleep(0.5)
+    turns_sent = 0
+    turns_acked = 0
+    exit_reason = "success"
 
     try: 
         t0 = time.perf_counter()
@@ -55,14 +60,28 @@ async def run_text_mvp() -> None:
         for step in SCENARIO:
             if step.speaker == "customer":
                 await customer.send_text(step.text)
-            else: 
+                turns_sent += 1
+                await teller.wait_for_text_from("Customer Bot", timeout_s=5)
+                turns_acked += 1
+            else:
                 await teller.send_text(step.text)
+                turns_sent += 1
+                await customer.wait_for_text_from("Bank Teller Bot", timeout_s=5)
+                turns_acked += 1
 
-            await asyncio.sleep(0.6)
 
         dur_ms = int((time.perf_counter() - t0) * 1000)
-        print(f"\n Phase 1 text MVP complete in {dur_ms}ms.\n")
-
+        print(
+            "\nPhase 1 Summary\n"
+            f"- turns_sent: {turns_sent}\n"
+            f"- turns_acked: {turns_acked}\n"
+            f"- duration_ms: {dur_ms}\n"
+            f"- exit_reason: {exit_reason}\n"
+        )
+    except TimeoutError as e:
+        exit_reason = "timeout"
+        print(f"\n[ERROR] timeout: {e}\n")
+        raise
     finally:
         # Leave cleanly
         await asyncio.gather(teller.stop(), customer.stop())
