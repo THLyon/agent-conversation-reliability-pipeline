@@ -19,7 +19,7 @@ class Step:
 SCENARIO = [
     Step("customer", "Hi—can you help me check my account balance?"),
     Step("teller", "Absolutely. Can you confirm your full name and last 4 digits of your SSN?"),
-    Step("customer", "Sure. Tanner Lyon, last 4 is 1234."),
+    Step("customer", "Sure. Tanner Lyon, last 4 is ****."),
     Step("teller", "Thanks. Your current balance is $2,413.18."),
     Step("customer", "What’s the overdraft fee if I go negative?"),
     Step("teller", "Our overdraft fee is $35 per item, up to 3 per day. You can opt into alerts to help avoid it."),

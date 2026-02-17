@@ -158,7 +158,12 @@ class DailyTextTransport:
 
         await self._task.queue_frame(frame)
 
-        print(f"[sent-app] {self._bot_name}")
+        if self._bot_name == "Customer Bot":
+            spaces = " " * 5
+        else: 
+            spaces = " " * 2
+        print(f"[sent-app] {self._bot_name}:", spaces, text)
+        
     
     async def wait_for_text_from(self, expected_name: str, timeout_s: float = 5.0) -> dict[str, Any]:
         deadline = asyncio.get_running_loop().time() + timeout_s
