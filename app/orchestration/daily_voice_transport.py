@@ -8,7 +8,7 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineTask
 from pipecat.pipeline.runner import PipelineRunner
 
-from pipecat.frames.frames import Frame, TTSSpeakFrame
+from pipecat.frames.frames import Frame, TTSSpeakFrame, InputAudioRawFrame
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
 from pipecat.transports.daily.transport import (
@@ -36,9 +36,8 @@ class DropInboundAudioFrames(FrameProcessor):
     - Pass everything else through (TTSSpeakFrame, control frames, etc.)
     """
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        tname = type(frame).__name__
-        if direction == FrameDirection.DOWSTREAM and tname == "InputAudioRawFrame":
-            return # drop
+        if direction == FrameDirection.DOWNSTREAM and isinstance(frame, InputAudioRawFrame):
+            return # drop inbound audio to prevent echo
         await self.push_frame(frame, direction)
 
 class DailyVoiceTransport:
@@ -47,7 +46,7 @@ class DailyVoiceTransport:
         self._cfg = cfg
 
         params = DailyParams(
-            transcription_enabled=cfg.transcription_enables,
+            transcription_enabled=cfg.transcription_enabled,
             microphone_out_enabled=True, 
             camera_out_enabled=False, 
         )
@@ -128,6 +127,7 @@ class DailyVoiceTransport:
         self._task = PipelineTask(pipeline)
         self._runner = PipelineRunner()
         self._run_task = asyncio.create_task(self._runner.run(self._task))
+        await self.wait_joined()
 
     async def stop(self) -> None:
         if self._task is None:
