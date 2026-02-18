@@ -11,6 +11,11 @@ from loguru import logger
 
 from app.orchestration.daily_text_transport import DailyTextTransport, DailyTextTransportConfig
 
+from app.orchestration.daily_voice_transport import (
+    DailyVoiceTransport,
+    DailyVoiceTransportConfig,
+)
+
 @dataclass(frozen=True)
 class Step: 
     speaker: str # "teller" or "customer"
@@ -86,5 +91,106 @@ async def run_text_mvp() -> None:
         # Leave cleanly
         await asyncio.gather(teller.stop(), customer.stop())
 
+
+async def run_audio_mvp() -> None:
+    load_dotenv()
+    logger.disable("pipecat.processors.frameworks.rtvi")
+
+    room_url = os.getenv("DAILY_ROOM_URL", "").strip().strip('"')
+    token = os.getenv("DAILY_TOKEN", "").strip().strip('"') or None
+    openai_api_key = os.getenv("OPENAI_API_KEY", "").strip().strip('"') or None
+
+    if not room_url:
+        raise RuntimeError("DAILY_ROOM_URL is required in .env")
+    if not openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY is required for OpenAI TTS in Phase 2")
+
+    teller = DailyVoiceTransport(
+        bot_name="Bank Teller Bot",
+        cfg=DailyVoiceTransportConfig(
+            room_url=room_url,
+            token=token,
+            openai_api_key=openai_api_key,
+            transcription_enabled=True,
+        ),
+    )
+    customer = DailyVoiceTransport(
+        bot_name="Customer Bot",
+        cfg=DailyVoiceTransportConfig(
+            room_url=room_url,
+            token=token,
+            openai_api_key=openai_api_key,
+            transcription_enabled=True,
+        ),
+    )
+
+    # Start/Join FIRST
+    await asyncio.gather(teller.start(), customer.start())
+    await asyncio.sleep(0.5)
+
+    turns_sent = 0
+    turns_acked = 0
+    exit_reason = "success"
+    turn_latency_ms: list[int] = []
+
+    try:
+        t0 = time.perf_counter()
+
+        for step in SCENARIO:
+            t_turn = time.perf_counter()
+
+            if step.speaker == "customer":
+                await customer.speak(step.text)
+                turns_sent += 1
+
+                await teller.wait_for_final_transcript_from(
+                    expected_name="Customer Bot",
+                    contains=step.text[:10],
+                    timeout_s=12,
+                )
+                turns_acked += 1
+
+            else:
+                await teller.speak(step.text)
+                turns_sent += 1
+
+                await customer.wait_for_final_transcript_from(
+                    expected_name="Bank Teller Bot",
+                    contains=step.text[:10],
+                    timeout_s=12,
+                )
+                turns_acked += 1
+
+            turn_latency_ms.append(int((time.perf_counter() - t_turn) * 1000))
+
+        dur_ms = int((time.perf_counter() - t0) * 1000)
+        p50 = sorted(turn_latency_ms)[len(turn_latency_ms) // 2] if turn_latency_ms else -1
+        p95 = sorted(turn_latency_ms)[max(0, int(len(turn_latency_ms) * 0.95) - 1)] if turn_latency_ms else -1
+
+        print(
+            "\nPhase 2 Summary\n"
+            f"- turns_sent: {turns_sent}\n"
+            f"- turns_acked: {turns_acked}\n"
+            f"- duration_ms: {dur_ms}\n"
+            f"- turn_latency_ms_p50: {p50}\n"
+            f"- turn_latency_ms_p95: {p95}\n"
+            f"- exit_reason: {exit_reason}\n"
+        )
+
+    except TimeoutError as e:
+        exit_reason = "timeout"
+        print(f"\n[ERROR] timeout: {e}\n")
+        raise
+    finally:
+        # Leave cleanly
+        await asyncio.gather(teller.stop(), customer.stop())
+
 def main() -> None:
-    asyncio.run(run_text_mvp())
+    mode = os.getenv("OUTRIVAL_MODE", "text").strip().lower()
+    if mode == "audio":
+        asyncio.run(run_audio_mvp())
+    else:
+        asyncio.run(run_text_mvp())
+
+if __name__ == "__main__":
+    main()

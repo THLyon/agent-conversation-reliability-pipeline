@@ -176,7 +176,7 @@ class DailyVoiceTransport:
                 raise TimeoutError(
                     f"{self._bot_name} did not receive FINAL transcript from {expected_name} within {timeout_s}s"
                 )
-            speaker, text, is_final = await asycnio.wait_for(self._tx_inbox.get(), timeout=remaining)
+            speaker, text, is_final = await asyncio.wait_for(self._tx_inbox.get(), timeout=remaining)
             if speaker != expected_name:
                 continue
             if not is_final:
