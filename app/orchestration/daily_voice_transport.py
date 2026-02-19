@@ -199,11 +199,13 @@ class DailyVoiceTransport:
 
         # wait up to ~2s for participant_id to become non-empty
         for _ in range(20):
-            if self.participant_id():
+            pid = self.participant_id()
+            if pid:
                 break
             await asyncio.sleep(0.1)
 
         print(f"[daily:joined] bot={self._bot_name} pid={self.participant_id()}")
+
 
 
 
@@ -247,39 +249,15 @@ class DailyVoiceTransport:
         await asyncio.wait_for(self._left.wait(), timeout=timeout_s)
 
     def participant_id(self) -> Optional[str]:
-        pid = getattr(self._transport, "participant_id", None)
-        if callable(pid):
-            try:
-                return pid()
-            except Exception:
-                return None
-        return pid
+        attr = getattr(self._transport, "participant_id", None)
+        try:
+            pid = attr() if callable(attr) else attr
+        except Exception:
+            pid = None
+        if isinstance(pid, str) and pid.strip():
+            return pid
+        return None
     
-    # async def send_control(self, payload: dict[str, Any]) -> None:
-    #     print(f"[control:sent] bot={self._bot_name} pid={self.participant_id()} payload={payload}")
-
-    #     frame = DailyOutputTransportMessageFrame(
-    #         message=payload,
-    #         participant_id="*",   # broadcast to all participants
-    #     )
-
-    #     send_fn = getattr(self._transport, "send_message", None)
-    #     if not callable(send_fn):
-    #         raise RuntimeError("DailyTransport has no send_message; can't send control")
-
-    #     try:
-    #         print(f"[control:send_call] bot={self._bot_name} frame={frame}")
-    #         res = send_fn(frame)
-    #         if asyncio.iscoroutine(res):
-    #             res = await res
-    #     except Exception as e:
-    #         print(f"[control:send_exc] bot={self._bot_name} err={e!r}")
-    #         raise
-
-    #     if res is not None:
-    #         print(f"[control:send_error] bot={self._bot_name} err={res} payload={payload}")
-    #     else:
-    #         print(f"[control:send_ok] bot={self._bot_name}")
     async def send_control(self, payload: dict[str, Any]) -> None:
         print(f"[control:sent] bot={self._bot_name} pid={self.participant_id()} payload={payload}")
 
@@ -304,37 +282,6 @@ class DailyVoiceTransport:
         raise RuntimeError("No send_app_message available, and pipeline task not started")
 
 
-
-    # async def wait_for_control_from(
-    #     self,
-    #     expected_name: str,
-    #     expected_turn_id: int,
-    #     *,
-    #     timeout_s: float = 8.0,
-    # ) -> dict[str, Any]:
-    #     deadline = asyncio.get_running_loop().time() + timeout_s
-    #     while True:
-    #         remaining = deadline - asyncio.get_running_loop().time()
-
-    #         if remaining <= 0:
-    #             raise TimeoutError(f"{self._bot_name} did not receive turn_done from {expected_name} turn_id={expected_turn_id}")
-
-    #         msg, sender = await asyncio.wait_for(self._inbox.get(), timeout=remaining)
-    #         self_id = self.participant_id()
-    #         if self_id and sender == self_id:
-    #             continue
-    #         print(f"[control:recv] {self._bot_name} sender={sender} msg={msg}")
-
-    #         if not isinstance(msg, dict):
-    #             continue
-    #         if msg.get("type") != "turn_done":
-    #             continue
-    #         if msg.get("name") != expected_name:
-    #             continue
-    #         if msg.get("turn_id") != expected_turn_id:
-    #             continue
-    #         return msg
-        
     async def wait_for_control_from(self, expected_name: str, expected_turn_id: int, timeout_s: float = 8.0):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
