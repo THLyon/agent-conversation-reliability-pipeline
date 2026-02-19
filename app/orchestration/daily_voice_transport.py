@@ -14,6 +14,7 @@ from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.transports.daily.transport import (
     DailyTransport, 
     DailyParams,
+    DailyOutputTransportMessageFrame
 )
 
 from pipecat.services.openai.tts import OpenAITTSService # or DeepgramTTSService, CartesiaTTSService
@@ -47,8 +48,11 @@ class DailyVoiceTransport:
 
         params = DailyParams(
             transcription_enabled=cfg.transcription_enabled,
-            microphone_out_enabled=True, 
-            camera_out_enabled=False, 
+            audio_out_enabled=True,        # REQUIRED      
+            #audio_out_sample_rate=24000,   # or None; defaults usually OK
+            audio_out_channels=1,
+            microphone_out_enabled=True,
+            camera_out_enabled=False,
         )
 
         self._transport = DailyTransport(
@@ -64,6 +68,7 @@ class DailyVoiceTransport:
 
         #transcription inbox: (speaker_name, text, is_final)
         self._tx_inbox: asyncio.Queue[tuple[str, str, bool]] = asyncio.Queue()
+        self._inbox: asyncio.Queue[tuple[Any, str]] = asyncio.Queue()
 
         self._runner: Optional[PipelineRunner] = None
         self._task: Optional[PipelineTask] = None
@@ -113,13 +118,31 @@ class DailyVoiceTransport:
 
             self._tx_inbox.put_nowait((str(speaker_name), text, is_final))
 
+        @self._transport.event_handler("on_app_message")
+        def _on_app_message(*args, **kwargs) -> None:
+            msg = kwargs.get("message") or kwargs.get("data") or (args[0] if args else None)
+            sender = kwargs.get("sender") or kwargs.get("sender_id") or (args[1] if len(args) > 1 else "unknown")
+            if msg is None:
+                return
+            self._inbox.put_nowait((msg, str(sender)))
+
+        @self._transport.event_handler("on_error")
+        def _on_error(*args, **kwargs) -> None:
+            print(f"[daily:error] bot={self._bot_name} args={args} kwargs={kwargs}")
+
+
     async def start(self) -> None: 
         if self._run_task is not None:
             return
         
+        # pipeline = Pipeline([
+        #     self._transport.input(),
+        #     DropInboundAudioFrames(),
+        #     self._tts,
+        #     self._transport.output(),
+        # ])
         pipeline = Pipeline([
             self._transport.input(),
-            DropInboundAudioFrames(),
             self._tts,
             self._transport.output(),
         ])
@@ -154,11 +177,57 @@ class DailyVoiceTransport:
     async def wait_left(self, timeout_s: float = 15.0) -> None:
         await asyncio.wait_for(self._left.wait(), timeout=timeout_s)
 
-    async def speak(self, text: str) -> None: 
-        if self._task is None: 
+    def participant_id(self) -> Optional[str]:
+        return getattr(self._transport, "participant_id", None)
+    
+    async def send_control(self, payload: dict[str, Any]) -> None:
+        if self._task is None:
+            raise RuntimeError("Transport not started; call start() before send_control()")
+        frame = DailyOutputTransportMessageFrame(payload)
+        print(f"[control:sent] {self._bot_name} {payload}")
+        await self._task.queue_frame(frame)
+
+    async def wait_for_control_from(
+        self,
+        expected_name: str,
+        expected_turn_id: int,
+        *,
+        timeout_s: float = 8.0,
+    ) -> dict[str, Any]:
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+
+            if remaining <= 0:
+                raise TimeoutError(f"{self._bot_name} did not receive turn_done from {expected_name} turn_id={expected_turn_id}")
+
+            msg, sender = await asyncio.wait_for(self._inbox.get(), timeout=remaining)
+            self_id = self.participant_id()
+            if self_id and sender == self_id:
+                continue
+            print(f"[control:recv] {self._bot_name} sender={sender} msg={msg}")
+
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") != "turn_done":
+                continue
+            if msg.get("name") != expected_name:
+                continue
+            if msg.get("turn_id") != expected_turn_id:
+                continue
+            return msg
+
+
+    async def speak(self, text: str) -> None:
+        if self._task is None:
             raise RuntimeError("Transport not started; call start() before speak()")
-        await self._task.queue_frame(TTSSpeakFrame(text))
+        try:
+            await self._task.queue_frame(TTSSpeakFrame(text))
+        except Exception as e:
+            print(f"[speak:error] bot={self._bot_name} err={e!r}")
+            raise
         print(f"[speak] {self._bot_name}: {text}")
+
 
     async def wait_for_final_transcript_from(
             self,

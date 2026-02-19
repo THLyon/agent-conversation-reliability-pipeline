@@ -62,17 +62,25 @@ async def run_text_mvp() -> None:
     try: 
         t0 = time.perf_counter()
 
+        # for step in SCENARIO:
+        #     if step.speaker == "customer":
+        #         await customer.send_text(step.text)
+        #         turns_sent += 1
+        #         await teller.wait_for_text_from("Customer Bot", timeout_s=5)
+        #         turns_acked += 1
+        #     else:
+        #         await teller.send_text(step.text)
+        #         turns_sent += 1
+        #         await customer.wait_for_text_from("Bank Teller Bot", timeout_s=5)
+        #         turns_acked += 1
         for step in SCENARIO:
             if step.speaker == "customer":
-                await customer.send_text(step.text)
-                turns_sent += 1
-                await teller.wait_for_text_from("Customer Bot", timeout_s=5)
-                turns_acked += 1
+                await customer.speak(step.text)
             else:
-                await teller.send_text(step.text)
-                turns_sent += 1
-                await customer.wait_for_text_from("Bank Teller Bot", timeout_s=5)
-                turns_acked += 1
+                await teller.speak(step.text)
+
+            # give time for TTS to play before next turn
+            await asyncio.sleep(min(4.0, 0.08 * len(step.text)))
 
 
         dur_ms = int((time.perf_counter() - t0) * 1000)
@@ -111,7 +119,7 @@ async def run_audio_mvp() -> None:
             room_url=room_url,
             token=token,
             openai_api_key=openai_api_key,
-            transcription_enabled=True,
+            transcription_enabled=False,
         ),
     )
     customer = DailyVoiceTransport(
@@ -120,13 +128,13 @@ async def run_audio_mvp() -> None:
             room_url=room_url,
             token=token,
             openai_api_key=openai_api_key,
-            transcription_enabled=True,
+            transcription_enabled=False,
         ),
     )
 
     # Start/Join FIRST
     await asyncio.gather(teller.start(), customer.start())
-    await asyncio.sleep(0.5)
+    # await asyncio.sleep(0.5)
 
     turns_sent = 0
     turns_acked = 0
@@ -136,29 +144,24 @@ async def run_audio_mvp() -> None:
     try:
         t0 = time.perf_counter()
 
-        for step in SCENARIO:
+        for turn_id, step in enumerate(SCENARIO, start=1):
             t_turn = time.perf_counter()
 
             if step.speaker == "customer":
                 await customer.speak(step.text)
+                await asyncio.sleep(min(3.0, 0.06 * len(step.text)))  # ~60ms per char cap at 3s
                 turns_sent += 1
 
-                await teller.wait_for_final_transcript_from(
-                    expected_name="Customer Bot",
-                    contains=step.text[:10],
-                    timeout_s=12,
-                )
+                await customer.send_control({"type": "turn_done", "name": "Customer Bot", "turn_id": turn_id})
+                await teller.wait_for_control_from("Customer Bot", turn_id, timeout_s=8)
                 turns_acked += 1
-
             else:
                 await teller.speak(step.text)
+                await asyncio.sleep(min(3.0, 0.06 * len(step.text)))
                 turns_sent += 1
 
-                await customer.wait_for_final_transcript_from(
-                    expected_name="Bank Teller Bot",
-                    contains=step.text[:10],
-                    timeout_s=12,
-                )
+                await teller.send_control({"type": "turn_done", "name": "Bank Teller Bot", "turn_id": turn_id})
+                await customer.wait_for_control_from("Bank Teller Bot", turn_id, timeout_s=8)
                 turns_acked += 1
 
             turn_latency_ms.append(int((time.perf_counter() - t_turn) * 1000))
