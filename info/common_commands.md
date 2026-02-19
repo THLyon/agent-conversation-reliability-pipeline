@@ -11,6 +11,9 @@ uv run ruff check .           # lint
 uv run ruff format .          # format
 uv run pytest -q              # tests
 
+OUTRIVAL_MODE=text uv run outrival-demo    
+OUTRIVAL_MODE=audio uv run outrival-demo
+
 ================================
      Terminal setup commands
 ================================
