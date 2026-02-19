@@ -98,7 +98,7 @@ class DailyTextTransport:
             self._transport.output(),
         ])
 
-        self._task = PipelineTask(pipeline)
+        self._task = PipelineTask(pipeline, enable_rtvi=False)
         self._runner = PipelineRunner()
 
         # Run in background task (within this process)
